@@ -9,6 +9,7 @@ import csv
 import os
 import re
 import random
+import subprocess
 import argparse
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -38,15 +39,19 @@ def setup_stealth_driver(headless=False):
     # 設置語言
     options.add_argument('--lang=zh-TW')
 
-    # 隱藏自動化特徵
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
 
     # 設置用戶配置
     options.add_argument('--user-data-dir=/tmp/chrome_profile_' + str(random.randint(1000, 9999)))
 
     # 創建驅動（undetected-chromedriver會自動處理反檢測）
-    driver = uc.Chrome(options=options, version_main=None)
+    # 自動檢測Chrome主版本號以匹配對應的ChromeDriver
+    try:
+        version_output = subprocess.check_output(["google-chrome", "--version"], stderr=subprocess.STDOUT, text=True)
+        match = re.search(r"(\d+)\.", version_output)
+        version_main = int(match.group(1)) if match else None
+    except Exception:
+        version_main = None
+    driver = uc.Chrome(options=options, version_main=version_main)
 
     # 執行額外的反檢測腳本
     driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {

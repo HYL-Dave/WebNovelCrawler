@@ -5,7 +5,7 @@
 ### 1. 安裝Python依賴
 
 ```bash
-pip install selenium beautifulsoup4 requests
+pip install selenium beautifulsoup4 requests undetected-chromedriver pyautogui
 ```
 
 ### 2. 安裝Chrome瀏覽器
@@ -14,23 +14,23 @@ pip install selenium beautifulsoup4 requests
 
 ### 3. 安裝ChromeDriver
 
-#### 方法一：自動安裝（推薦）
+#### 方法一：自動安裝（推薦，適用於基本Selenium爬蟲）
 
 ```bash
 pip install webdriver-manager
 ```
 
-然後修改代碼中的driver設置：
+然後修改代碼中的driver設置（以 `novel_crawler_selenium.py` 為例）：
 
 ```python
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 
 def setup_driver(headless=False):
-    """設置Chrome驅動程序"""
+    """設置Chrome驅動程序（使用webdriver-manager自動管理ChromeDriver）"""
     chrome_options = Options()
     # ... 其他選項設置 ...
-    
+
     # 自動下載並使用匹配版本的ChromeDriver
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -75,6 +75,20 @@ python3 novel_crawler_selenium.py --csv m1.csv --start 9 --end 20
 ```bash
 # 設置5秒延遲
 python3 novel_crawler_selenium.py --csv m1.csv --delay 5
+```
+
+### 隱身模式爬蟲（Stealth 反檢測模式）
+
+無需手動安裝ChromeDriver，使用 `undetected-chromedriver` 自動匹配驅動版本。
+
+```bash
+python3 novel_crawler_stealth.py --csv m1.csv --output wen_novel_stealth --test --headless
+```
+
+### 進階隱身模式爬蟲（Advanced Stealth 繞過多種反爬技術）
+
+```bash
+python3 novel_crawler_advanced_stealth.py --csv m1.csv --output wen_novel_advanced --test
 ```
 
 ## 常見問題
@@ -184,6 +198,21 @@ def load_progress(progress_file='progress.json'):
             return json.load(f)
     except FileNotFoundError:
         return []
+```
+
+## 測試腳本
+
+本專案包含多個測試腳本，可用於檢測網站反爬機制和內容結構：
+
+```bash
+# 測試普通Selenium和undetected-chromedriver的檢測效果
+python3 test_detection.py
+
+# 檢查頁面結構以定位內容容器
+python3 test_url_structure.py
+
+# 深入測試 zashuwu.com 的內容加載邏輯
+python3 test_zashuwu_advanced.py
 ```
 
 ## 法律聲明

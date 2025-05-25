@@ -10,6 +10,7 @@ import csv
 import os
 import re
 import random
+import subprocess
 import json
 import argparse
 from selenium.webdriver.common.by import By
@@ -63,7 +64,14 @@ class StealthCrawler:
         options.add_argument('--window-size=1366,768')
 
         # 創建驅動
-        self.driver = uc.Chrome(options=options, version_main=None)
+        # 自動檢測Chrome主版本號以匹配對應的ChromeDriver
+        try:
+            version_output = subprocess.check_output(["google-chrome", "--version"], stderr=subprocess.STDOUT, text=True)
+            match = re.search(r"(\d+)\.", version_output)
+            version_main = int(match.group(1)) if match else None
+        except Exception:
+            version_main = None
+        self.driver = uc.Chrome(options=options, version_main=version_main)
 
         # 注入更多的反檢測JavaScript
         self.inject_stealth_js()
@@ -354,11 +362,12 @@ def clean_content(text):
 
 def main():
     parser = argparse.ArgumentParser(description='進階反檢測爬蟲')
-    parser.add_argument('--csv', type=str, default='m1.csv')
-    parser.add_argument('--output', type=str, default='wen_novel')
-    parser.add_argument('--test', action='store_true')
-    parser.add_argument('--start', type=int, default=0)
-    parser.add_argument('--end', type=int, default=None)
+    parser.add_argument('--csv', type=str, default='m1.csv', help='CSV文件路徑')
+    parser.add_argument('--output', type=str, default='wen_novel', help='輸出目錄')
+    parser.add_argument('--test', action='store_true', help='測試模式（只爬取第一個URL）')
+    parser.add_argument('--start', type=int, default=0, help='開始索引')
+    parser.add_argument('--end', type=int, default=None, help='結束索引')
+    parser.add_argument('--headless', action='store_true', help='無頭模式（不推薦）')
 
     args = parser.parse_args()
 
@@ -383,7 +392,7 @@ def main():
     print(f"準備爬取 {len(urls)} 個URL")
 
     # 創建爬蟲實例
-    crawler = StealthCrawler(headless=False)
+    crawler = StealthCrawler(headless=args.headless)
 
     try:
         for i, url in enumerate(urls):
