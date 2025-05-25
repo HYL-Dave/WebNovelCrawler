@@ -114,46 +114,68 @@ def clean_content(text):
     return cleaned_text
 
 
-def crawl_novel_content_selenium(driver, url, wait_time=10):
+def crawl_novel_content_selenium(driver, url, wait_time=20):
     """使用Selenium爬取小說內容"""
     try:
         # 訪問URL
         driver.get(url)
 
-        # 等待頁面加載
+        # 等待頁面基本加載
         wait = WebDriverWait(driver, wait_time)
+
+        # 增加等待時間，讓JavaScript有充足時間解密內容
+        print("等待JavaScript解密內容...")
+        time.sleep(8)  # 增加到8秒
+
+        # 嘗試滾動頁面觸發懶加載
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+        time.sleep(2)
+
+        # 首先嘗試直接獲取txtContent div
+        try:
+            # 等待txtContent元素出現並包含實際內容
+            txt_content = wait.until(
+                EC.presence_of_element_located((By.ID, "txtContent"))
+            )
+            # 再等待一下確保內容完全加載
+            time.sleep(3)
+
+            # 獲取內容
+            content_text = txt_content.text.strip()
+
+            # 檢查是否是真實的小說內容（應該包含"葉洵"或"第1章"等關鍵詞）
+            if content_text and len(content_text) > 100 and not content_text.startswith('[都市小说]'):
+                print("找到txtContent中的內容")
+                return clean_content(content_text)
+        except:
+            pass
 
         # 嘗試多種選擇器來找到內容
         content_selectors = [
-            # zashuwu.com的常見選擇器
+            # zashuwu.com的特定選擇器
+            (By.ID, 'txtContent'),
             (By.ID, 'content'),
             (By.ID, 'chaptercontent'),
-            (By.ID, 'txtContent'),
             (By.ID, 'BookText'),
             (By.ID, 'acontent'),
-            (By.CLASS_NAME, 'content'),
             (By.CLASS_NAME, 'readcontent'),
             (By.CLASS_NAME, 'showtxt'),
             (By.CLASS_NAME, 'read-content'),
             (By.CLASS_NAME, 'chapter-content'),
             (By.CLASS_NAME, 'novel-content'),
-            (By.CLASS_NAME, 'article-content'),
-            (By.TAG_NAME, 'article'),
-            # 更通用的選擇器
-            (By.XPATH, "//div[@id='content' or @class='content']"),
-            (By.XPATH, "//div[contains(@class, 'content') or contains(@id, 'content')]"),
-            (By.XPATH, "//div[contains(@class, 'chapter') or contains(@id, 'chapter')]"),
-            (By.XPATH, "//div[contains(@class, 'read') or contains(@id, 'read')]"),
-            (By.XPATH, "//div[contains(@class, 'txt') or contains(@id, 'txt')]"),
-            (By.XPATH, "//div[contains(@class, 'novel') or contains(@id, 'novel')]"),
-            (By.XPATH, "//article")
+            (By.CLASS_NAME, 'content'),
+            # 更精確的XPath選擇器
+            (By.XPATH, "//div[@id='txtContent']"),
+            (By.XPATH, "//div[@id='content' and not(contains(@class, 'recommend'))]"),
+            (By.XPATH, "//div[contains(@class, 'read') and contains(@class, 'content')]"),
+            (By.XPATH, "//div[@class='showtxt' or @class='readcontent']")
         ]
 
         content_element = None
         content_text = ""
 
-        # 首先等待頁面有基本內容
-        time.sleep(2)  # 給JavaScript時間執行
+        # 等待一下讓JavaScript完全執行
+        time.sleep(3)
 
         # 嘗試每個選擇器
         for selector_type, selector_value in content_selectors:
@@ -163,12 +185,16 @@ def crawl_novel_content_selenium(driver, url, wait_time=10):
                     text = element.text.strip()
                     # 檢查是否有實質內容（至少100個字符）
                     if len(text) > 100:
-                        # 檢查是否包含小說內容的特徵
-                        if any(keyword in text for keyword in ['第', '章', '葉洵', '秦王', '殿下', '陛下']):
-                            content_element = element
-                            content_text = text
-                            print(f"找到內容使用選擇器: {selector_type}, {selector_value}")
-                            break
+                        # 排除推薦列表內容
+                        if not any(
+                                exclude in text for exclude in ['[都市小说]', '[言情小说]', '[武侠小说]', '最新章节']):
+                            # 檢查是否包含小說內容的特徵
+                            if any(keyword in text for keyword in
+                                   ['第', '章', '葉洵', '秦王', '殿下', '陛下', '貞武', '夏國']) or len(text) > 1000:
+                                content_element = element
+                                content_text = text
+                                print(f"找到內容使用選擇器: {selector_type}, {selector_value}")
+                                break
 
                 if content_element:
                     break
@@ -179,53 +205,149 @@ def crawl_novel_content_selenium(driver, url, wait_time=10):
         # 如果還是沒找到，嘗試執行JavaScript來獲取內容
         if not content_text:
             try:
-                # 嘗試執行JavaScript來獲取動態加載的內容
-                content_text = driver.execute_script("""
-                    // 嘗試多種方式獲取內容
-                    var content = document.getElementById('content') || 
-                                  document.getElementById('chaptercontent') ||
-                                  document.getElementById('txtContent') ||
-                                  document.querySelector('.content') ||
-                                  document.querySelector('.readcontent') ||
-                                  document.querySelector('article');
+                print("嘗試使用JavaScript獲取動態內容...")
 
-                    if (content) {
-                        return content.innerText || content.textContent;
+                # 首先檢查是否有_txt_call函數
+                has_txt_call = driver.execute_script("return typeof _txt_call === 'function';")
+                print(f"檢測到_txt_call函數: {has_txt_call}")
+
+                # 等待更長時間讓解密完成
+                time.sleep(5)
+
+                # 嘗試多種JavaScript方法獲取內容
+                content_text = driver.execute_script("""
+                    // 方法1：直接獲取txtContent
+                    var txtContent = document.getElementById('txtContent');
+                    if (txtContent && txtContent.innerText && txtContent.innerText.length > 100) {
+                        console.log('Found content in txtContent');
+                        return txtContent.innerText;
                     }
 
-                    // 如果還是沒有，嘗試獲取最大的文本塊
+                    // 方法2：查找包含小說內容的div
                     var divs = document.getElementsByTagName('div');
-                    var maxLength = 0;
-                    var maxDiv = null;
-
                     for (var i = 0; i < divs.length; i++) {
                         var text = divs[i].innerText || divs[i].textContent || '';
-                        if (text.length > maxLength && text.length > 100) {
+                        // 檢查是否包含小說特徵詞
+                        if (text.length > 500 && 
+                            (text.includes('葉洵') || text.includes('第1章') || 
+                             text.includes('貞武') || text.includes('秦王') ||
+                             text.includes('風流皇太子'))) {
+                            console.log('Found content in div');
+                            return text;
+                        }
+                    }
+
+                    // 方法3：獲取最大的文本塊（排除推薦內容）
+                    var maxLength = 0;
+                    var maxDiv = null;
+                    for (var i = 0; i < divs.length; i++) {
+                        var text = divs[i].innerText || divs[i].textContent || '';
+                        if (text.length > maxLength && 
+                            !text.includes('[都市小说]') && 
+                            !text.includes('[言情小说]') &&
+                            !text.includes('最新章节')) {
                             maxLength = text.length;
                             maxDiv = divs[i];
                         }
                     }
 
-                    return maxDiv ? (maxDiv.innerText || maxDiv.textContent) : '';
+                    if (maxDiv && maxLength > 300) {
+                        console.log('Found max content block');
+                        return maxDiv.innerText || maxDiv.textContent;
+                    }
+
+                    // 方法4：等待一下再試
+                    setTimeout(function() {
+                        var content = document.getElementById('txtContent');
+                        if (content) {
+                            console.log('Found content after timeout');
+                        }
+                    }, 3000);
+
+                    return '';
                 """)
 
                 if content_text:
                     print("通過JavaScript獲取到內容")
+                else:
+                    # 再等待一下，讓setTimeout執行
+                    time.sleep(4)
+                    # 再次嘗試獲取
+                    content_text = driver.execute_script("""
+                        var txtContent = document.getElementById('txtContent');
+                        if (txtContent) {
+                            return txtContent.innerText || txtContent.textContent || '';
+                        }
+                        return '';
+                    """)
+
+                    if content_text:
+                        print("通過延遲JavaScript獲取到內容")
 
             except Exception as e:
                 print(f"JavaScript執行失敗: {e}")
 
         if content_text:
+            # 檢查內容是否仍然是加密的
+            if "This content is encoded/encrypted" in content_text:
+                print("內容仍然是加密的，嘗試其他方法...")
+
+                # 嘗試重新加載頁面
+                driver.refresh()
+                time.sleep(8)
+
+                # 再次嘗試獲取
+                content_text = driver.execute_script("""
+                    var txtContent = document.getElementById('txtContent');
+                    if (txtContent) {
+                        return txtContent.innerText || txtContent.textContent || '';
+                    }
+                    return '';
+                """)
+
             # 清理內容
-            cleaned_content = clean_content(content_text)
-            return cleaned_content
-        else:
-            print(f"未能找到內容元素: {url}")
-            # 保存頁面源碼以供調試
-            with open('debug_page_source.html', 'w', encoding='utf-8') as f:
-                f.write(driver.page_source)
-            print("頁面源碼已保存到 debug_page_source.html")
-            return None
+            if content_text and len(content_text) > 100:
+                cleaned_content = clean_content(content_text)
+                return cleaned_content
+
+        # 如果所有方法都失敗了，保存調試信息
+        print(f"未能找到內容元素: {url}")
+
+        # 保存頁面截圖
+        screenshot_path = f'debug_screenshot_{int(time.time())}.png'
+        driver.save_screenshot(screenshot_path)
+        print(f"頁面截圖已保存到 {screenshot_path}")
+
+        # 保存頁面源碼
+        with open(f'debug_page_source_{int(time.time())}.html', 'w', encoding='utf-8') as f:
+            f.write(driver.page_source)
+        print("頁面源碼已保存")
+
+        # 嘗試列出所有可能的內容元素
+        print("\n調試信息 - 頁面上的所有div元素:")
+        debug_info = driver.execute_script("""
+            var divs = document.getElementsByTagName('div');
+            var info = [];
+            for (var i = 0; i < divs.length; i++) {
+                var div = divs[i];
+                var text = (div.innerText || div.textContent || '').trim();
+                if (text.length > 50 && text.length < 300) {
+                    info.push({
+                        id: div.id || 'no-id',
+                        className: div.className || 'no-class',
+                        textLength: text.length,
+                        textPreview: text.substring(0, 100)
+                    });
+                }
+            }
+            return info;
+        """)
+
+        for item in debug_info[:10]:  # 只顯示前10個
+            print(f"  ID: {item['id']}, Class: {item['className']}, Length: {item['textLength']}")
+            print(f"  Preview: {item['textPreview']}...")
+
+        return None
 
     except Exception as e:
         print(f"爬取 {url} 時出錯: {e}")
