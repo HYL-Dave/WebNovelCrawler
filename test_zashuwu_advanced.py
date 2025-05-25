@@ -6,6 +6,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 import json
 import re
+import pytest
+import requests
 
 
 def test_zashuwu_content(url="https://m.zashuwu.com/wen/2vFm/1.html"):

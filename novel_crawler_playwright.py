@@ -6,6 +6,10 @@
 
 import asyncio
 from playwright.async_api import async_playwright
+try:
+    from playwright_stealth import stealth_sync
+except ImportError:
+    stealth_sync = None
 import csv
 import os
 import re
@@ -111,18 +115,13 @@ async def crawl_novel_content(page, url):
                 // 優先嘗試txtContent
                 const txtContent = document.getElementById('txtContent');
                 if (txtContent && txtContent.innerText && txtContent.innerText.length > 100) {
-                    const text = txtContent.innerText;
-                    // 檢查是否包含小說內容
-                    if (text.includes('葉洵') || text.includes('秦王') || 
-                        text.includes('貞武') || text.includes('第1章')) {
-                        console.log('Found novel content in txtContent');
-                        return text;
-                    }
+                    console.log('Found novel content in txtContent');
+                    return txtContent.innerText;
                 }
 
                 // 嘗試其他選擇器
                 const selectors = [
-                    '#content', '#chaptercontent', '#BookText',
+                    '#content', '#chaptercontent', '#chapter-content', '#BookText',
                     '.readcontent', '.read-content', '.novel-content'
                 ];
 
@@ -266,6 +265,10 @@ async def main():
 
         # 創建頁面
         page = await context.new_page()
+        if stealth_sync:
+            stealth_sync(page)
+        else:
+            print('playwright-stealth plugin not installed, skipping stealth injection')
 
         # 添加控制台日誌監聽
         page.on('console', lambda msg: print(f'[Console] {msg.text}'))

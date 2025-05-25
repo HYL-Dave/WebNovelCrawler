@@ -200,6 +200,32 @@ def load_progress(progress_file='progress.json'):
         return []
 ```
 
+## 移動端小說內容抓取模式
+
+針對移動端站點（如 m.zashuwu.com）使用 `initTxt(...)` 動態加載內容的頁面，本專案已新增自動提取並下載純文本的功能，無需等待頁面渲染。
+
+### 使用 stealth 版
+
+```bash
+python3 novel_crawler_stealth.py --csv m1.csv --output wen_novel_stealth --test --headless
+```
+
+### 使用 advanced stealth 版
+
+```bash
+python3 novel_crawler_advanced_stealth.py --csv m1.csv --output wen_novel_advanced --test --headless
+```
+
+## 冒煙測試腳本
+
+項目根目錄提供 `smoke_test_mobile_fetch.py`，用於快速對比兩種爬蟲在移動端的抓取效果：
+
+```bash
+python3 smoke_test_mobile_fetch.py \
+  --url https://m.zashuwu.com/wen/2vFm/1.html \
+  --timeout 30
+```
+
 ## 測試腳本
 
 本專案包含多個測試腳本，可用於檢測網站反爬機制和內容結構：

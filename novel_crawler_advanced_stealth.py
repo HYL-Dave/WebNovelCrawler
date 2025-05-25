@@ -18,6 +18,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 import pyautogui
+import requests
 
 
 class StealthCrawler:
@@ -153,6 +154,11 @@ class StealthCrawler:
             get: () => ['zh-TW', 'zh', 'en-US', 'en']
         });
 
+        // 11. 修改 userAgent
+        Object.defineProperty(navigator, 'userAgent', {
+            get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        });
+
         // 7. 修改屏幕屬性
         Object.defineProperty(screen, 'availWidth', {
             get: () => 1366
@@ -276,6 +282,15 @@ class StealthCrawler:
 
     def extract_novel_content(self):
         """提取小說內容"""
+        # 嘗試提取 initTxt 動態加載 URL 並使用 requests 獲取純文本
+        init_url = extract_init_txt_url(self.driver)
+        if init_url:
+            try:
+                txt = fetch_initTxt_content(init_url, referer=self.driver.current_url)
+                return txt
+            except Exception as e:
+                print(f"fetch initTxt 失敗: {e}")
+
         # 模擬用戶行為
         self.simulate_real_user()
 
@@ -295,7 +310,7 @@ class StealthCrawler:
                 }
 
                 // 查找其他可能的容器
-                var containers = document.querySelectorAll('#content, #chaptercontent, .readcontent, .read-content');
+                var containers = document.querySelectorAll('#content, #chaptercontent, #chapter-content, .readcontent, .read-content');
                 for (var i = 0; i < containers.length; i++) {
                     var text = containers[i].innerText || containers[i].textContent || '';
                     if (text.length > 500) {
@@ -358,6 +373,38 @@ def clean_content(text):
             cleaned_lines.append(line)
 
     return '\n'.join(cleaned_lines)
+
+
+def extract_init_txt_url(driver):
+    """提取移動端 initTxt 調用的內容 URL"""
+    scripts = driver.find_elements(By.TAG_NAME, 'script')
+    for script in scripts:
+        content = script.get_attribute('innerHTML') or ''
+        match = re.search(r"initTxt\((?:\"|')(.*?)(?:\"|')", content)
+        if match:
+            url = match.group(1)
+            if not url.startswith('http'):
+                url = 'https:' + url
+            return url
+    return None
+
+
+def fetch_initTxt_content(txt_url, referer=None):
+    """使用 requests 下載 initTxt 指向的純文本內容"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                      ' (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    if referer:
+        headers['Referer'] = referer
+    resp = requests.get(txt_url, headers=headers, timeout=15)
+    resp.raise_for_status()
+    data = resp.text
+    # 處理 _txt_call 格式
+    if data.startswith('_txt_call("') and data.endswith('")'):
+        inner = data.split('_txt_call("', 1)[1].rsplit('")', 1)[0]
+        return inner
+    return data
 
 
 def main():

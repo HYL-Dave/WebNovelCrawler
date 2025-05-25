@@ -11,6 +11,7 @@ import re
 import random
 import subprocess
 import argparse
+import requests
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -94,6 +95,38 @@ def setup_stealth_driver(headless=False):
     })
 
     return driver
+
+
+def extract_init_txt_url(driver):
+    """提取移動端 initTxt 調用的內容 URL"""
+    scripts = driver.find_elements(By.TAG_NAME, 'script')
+    for script in scripts:
+        content = script.get_attribute('innerHTML') or ''
+        match = re.search(r"initTxt\((?:\"|')(.*?)(?:\"|')", content)
+        if match:
+            url = match.group(1)
+            if not url.startswith('http'):
+                url = 'https:' + url
+            return url
+    return None
+
+
+def fetch_initTxt_content(txt_url, referer=None):
+    """使用 requests 下載 initTxt 指向的純文本內容"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                      ' (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    if referer:
+        headers['Referer'] = referer
+    resp = requests.get(txt_url, headers=headers, timeout=15)
+    resp.raise_for_status()
+    data = resp.text
+    # 處理 _txt_call 格式
+    if data.startswith('_txt_call("') and data.endswith('")'):
+        inner = data.split('_txt_call("', 1)[1].rsplit('")', 1)[0]
+        return inner
+    return data
 
 
 def simulate_human_behavior(driver, element=None):
@@ -202,6 +235,17 @@ def crawl_novel_content_stealth(driver, url, max_retries=3):
             # 模擬人類行為
             simulate_human_behavior(driver)
 
+            # 嘗試提取 initTxt 動態加載 URL 並使用 requests 下載純文本
+            init_url = extract_init_txt_url(driver)
+            if init_url:
+                print(f"找到 initTxt URL: {init_url}")
+                try:
+                    txt = fetch_initTxt_content(init_url, referer=url)
+                    print(f"通過 requests 獲取純文本，長度: {len(txt)}")
+                    return clean_content(txt)
+                except Exception as e:
+                    print(f"通過 requests 獲取 txt 失敗: {e}")
+
             # 等待內容加載
             wait = WebDriverWait(driver, 20)
 
@@ -233,7 +277,7 @@ def crawl_novel_content_stealth(driver, url, max_retries=3):
                 }
 
                 // 方法2：查找所有可能的容器
-                var selectors = ['#content', '#chaptercontent', '.readcontent', '.read-content'];
+                var selectors = ['#content', '#chaptercontent', '#chapter-content', '.readcontent', '.read-content'];
                 for (var i = 0; i < selectors.length; i++) {
                     var el = document.querySelector(selectors[i]);
                     if (el) {
@@ -252,17 +296,12 @@ def crawl_novel_content_stealth(driver, url, max_retries=3):
 
                 for (var i = 0; i < divs.length; i++) {
                     var text = divs[i].innerText || divs[i].textContent || '';
-                    if (text.length > maxLength && 
-                        !text.includes('[都市小说]') && 
+                    if (text.length > maxLength &&
+                        !text.includes('[都市小说]') &&
                         !text.includes('最新章節') &&
                         text.length > 500) {
-
-                        // 檢查是否包含小說關鍵詞
-                        if (text.includes('葉洵') || text.includes('秦王') || 
-                            text.includes('貞武') || text.includes('第1章')) {
-                            maxLength = text.length;
-                            maxText = text;
-                        }
+                        maxLength = text.length;
+                        maxText = text;
                     }
                 }
 
