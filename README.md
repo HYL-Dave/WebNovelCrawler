@@ -1,140 +1,191 @@
-# Novel Content Crawler
+# Selenium爬蟲安裝指南
 
-A Python script to crawl novel content from URLs in a CSV file and clean advertisement lines.
+## 前置要求
 
-## Features
-
-- Reads URLs from a CSV file
-- Crawls novel content from each URL
-- Cleans advertisement lines from the content
-- Saves the cleaned content to text files
-- Supports various command-line options for flexibility
-
-## Requirements
-
-- Python 3.6+
-- Required packages: `requests`, `beautifulsoup4`
-
-You can install the required packages using pip:
+### 1. 安裝Python依賴
 
 ```bash
-pip install requests beautifulsoup4
+pip install selenium beautifulsoup4 requests
 ```
 
-## Usage
+### 2. 安裝Chrome瀏覽器
 
-Basic usage:
+確保你的系統已安裝最新版本的Google Chrome瀏覽器。
+
+### 3. 安裝ChromeDriver
+
+#### 方法一：自動安裝（推薦）
 
 ```bash
-python3 novel_crawler.py
+pip install webdriver-manager
 ```
 
-This will read URLs from `m.csv`, crawl the content, and save it to the `novel_content` directory.
+然後修改代碼中的driver設置：
 
-### Command-line Options
+```python
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
 
-- `--csv`: Path to the CSV file containing URLs (default: `m.csv`)
-- `--output`: Directory to save the crawled content (default: `novel_content`)
-- `--delay`: Delay between requests in seconds (default: 1.0)
-- `--verbose`: Show verbose output
-- `--start`: Start crawling from this index (default: 0)
-- `--end`: End crawling at this index (default: None, crawl all)
-- `--test`: Test mode: only crawl the first URL
+def setup_driver(headless=False):
+    """設置Chrome驅動程序"""
+    chrome_options = Options()
+    # ... 其他選項設置 ...
+    
+    # 自動下載並使用匹配版本的ChromeDriver
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    return driver
+```
 
-### Examples
+#### 方法二：手動安裝
 
-Crawl with m1.csv file:
+1. 查看Chrome版本：在Chrome中訪問 `chrome://version/`
+2. 下載對應版本的ChromeDriver：https://chromedriver.chromium.org/
+3. 將ChromeDriver放入系統PATH中，或指定路徑
+
+## 使用方法
+
+### 基本使用
 
 ```bash
-python3 novel_crawler.py --csv m1.csv --output zashuwu_novel
+python3 novel_crawler_selenium.py --csv m1.csv --output wen_novel
 ```
 
-Crawl with a custom CSV file and output directory:
+### 無頭模式（不顯示瀏覽器窗口）
 
 ```bash
-python3 novel_crawler.py --csv my_urls.csv --output my_novel
+python3 novel_crawler_selenium.py --csv m1.csv --output wen_novel --headless
 ```
 
-Crawl with a longer delay between requests:
+### 測試模式（只爬取第一個URL）
 
 ```bash
-python3 novel_crawler.py --delay 2.5
+python3 novel_crawler_selenium.py --csv m1.csv --test --verbose
 ```
 
-Crawl only a subset of URLs:
+### 指定範圍爬取
 
 ```bash
-python3 novel_crawler.py --start 10 --end 20
+# 爬取第10到20章
+python3 novel_crawler_selenium.py --csv m1.csv --start 9 --end 20
 ```
 
-Test the script with just the first URL:
+### 調整延遲時間
 
 ```bash
-python3 novel_crawler.py --csv m1.csv --test --verbose
+# 設置5秒延遲
+python3 novel_crawler_selenium.py --csv m1.csv --delay 5
 ```
 
-## CSV File Format
+## 常見問題
 
-The script supports two CSV file formats:
+### 1. ChromeDriver版本不匹配
 
-### Format 1 (URLs in first column)
+錯誤信息：`selenium.common.exceptions.SessionNotCreatedException: Message: session not created: This version of ChromeDriver only supports Chrome version XX`
 
+解決方法：下載與Chrome瀏覽器版本匹配的ChromeDriver。
+
+### 2. 無法找到ChromeDriver
+
+錯誤信息：`selenium.common.exceptions.WebDriverException: Message: 'chromedriver' executable needs to be in PATH`
+
+解決方法：
+- 將ChromeDriver添加到系統PATH
+- 或使用webdriver-manager自動管理
+- 或在代碼中指定ChromeDriver的完整路徑
+
+### 3. 內容仍然無法解密
+
+如果Selenium方案仍無法獲取內容，可能需要：
+
+1. **增加等待時間**：某些網站的JavaScript解密需要更長時間
+2. **模擬用戶行為**：添加滾動、點擊等動作
+3. **使用其他瀏覽器**：嘗試Firefox或Edge
+4. **分析網站的解密邏輯**：使用瀏覽器的開發者工具
+
+### 4. 被網站檢測為機器人
+
+解決方法：
+- 使用隨機User-Agent
+- 添加隨機延遲
+- 使用代理IP
+- 模擬真實用戶行為（鼠標移動、隨機點擊等）
+
+## 調試技巧
+
+### 1. 保存截圖
+
+在爬取失敗時保存截圖：
+
+```python
+driver.save_screenshot('debug_screenshot.png')
 ```
-"item-text href","item-text"
-"https://example.com/chapter1.html","Chapter 1"
-"https://example.com/chapter2.html","Chapter 2"
-...
+
+### 2. 保存頁面源碼
+
+```python
+with open('debug_page.html', 'w', encoding='utf-8') as f:
+    f.write(driver.page_source)
 ```
 
-### Format 2 (URLs in second column, as in m1.csv)
+### 3. 使用瀏覽器開發者工具
 
+1. 不使用無頭模式運行
+2. 在程序暫停時手動檢查頁面
+3. 使用F12查看網絡請求和JavaScript執行
+
+## 進階優化
+
+### 1. 使用多線程
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+def crawl_with_thread(url):
+    driver = setup_driver(headless=True)
+    try:
+        content = crawl_novel_content_selenium(driver, url)
+        return content
+    finally:
+        driver.quit()
+
+# 使用線程池
+with ThreadPoolExecutor(max_workers=3) as executor:
+    results = executor.map(crawl_with_thread, urls)
 ```
-"tablescraper-selected-row","tablescraper-selected-row href"
-"分章閱讀 1","https://m.zashuwu.com/wen/2vFm/1.html"
-"分章閱讀 2","https://m.zashuwu.com/wen/2vFm/2.html"
-...
+
+### 2. 添加重試機制
+
+```python
+def crawl_with_retry(driver, url, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            content = crawl_novel_content_selenium(driver, url)
+            if content:
+                return content
+        except Exception as e:
+            print(f"嘗試 {attempt+1} 失敗: {e}")
+            time.sleep(5)
+    return None
 ```
 
-## Limitations
+### 3. 保存進度
 
-### Content Protection
+```python
+import json
 
-Some websites (like zashuwu.com) use encoding or encryption to protect their content from being scraped. The script will detect this and inform you when it encounters such content. In these cases, you'll need to visit the original website to read the content.
+def save_progress(completed_urls, progress_file='progress.json'):
+    with open(progress_file, 'w') as f:
+        json.dump(completed_urls, f)
 
-For example, if you see a message like:
+def load_progress(progress_file='progress.json'):
+    try:
+        with open(progress_file, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
 ```
-Content is encoded/encrypted and cannot be decoded without the website's decryption algorithm
-```
 
-This means the website is using a custom encoding or encryption scheme that the script cannot decode.
+## 法律聲明
 
-## Advertisement Cleaning
-
-The script removes advertisement lines containing patterns like:
-
-### For dewoxs.com:
-- "德窝小说网"
-- "DEWOXS.COM"
-- "记住网址"
-- "收藏本站"
-
-### For zashuwu.com:
-- "雜書屋"
-- "zashuwu.com"
-- "雜書屋小說網"
-
-### General patterns:
-- Common advertisement text in both simplified and traditional Chinese
-- URLs and website references
-- "加入书签" (Add to bookmarks)
-- "手机阅读" / "手機閱讀" (Mobile reading)
-- And many other common advertisement patterns
-
-## Output
-
-The script creates a text file for each URL in the output directory. The file name is based on the chapter number extracted from the URL.
-
-### Examples:
-
-- For the URL `https://m.dewoxs.com/8mkN/123.html`, the output file will be `chapter_123.txt`.
-- For the URL `https://m.zashuwu.com/wen/2vFm/45.html`, the output file will be `chapter_45.txt`.
+請確保遵守網站的使用條款和robots.txt文件。僅用於個人學習和研究目的。
