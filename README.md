@@ -200,6 +200,19 @@ def load_progress(progress_file='progress.json'):
         return []
 ```
 
+## Playwright 爬蟲（Stealth 模式）
+
+使用 Playwright 配合 stealth 插件，快速繞過網站的自動化檢測（Cloudflare BotD、Canvas fingerprinting 等）。
+
+```bash
+pip install playwright playwright-stealth
+playwright install chromium
+```
+
+```bash
+python3 novel_crawler_playwright.py --csv m1.csv --output wen_novel_playwright --test --headless
+```
+
 ## 移動端小說內容抓取模式
 
 針對移動端站點（如 m.zashuwu.com）使用 `initTxt(...)` 動態加載內容的頁面，本專案已新增自動提取並下載純文本的功能，無需等待頁面渲染。
@@ -240,6 +253,37 @@ python3 test_url_structure.py
 # 深入測試 zashuwu.com 的內容加載邏輯
 python3 test_zashuwu_advanced.py
 ```
+
+## 代理池 (Proxy Pool)
+
+若站點對流量或 IP 進行限速/封鎖，可配置代理池以隨機切換代理。
+在專案根目錄創建 `proxies.txt`，每行一個代理（支持 http://user:pass@ip:port），可用 `#` 註釋：
+
+```text
+# proxies.txt 範例
+http://user:passwd@123.45.67.89:8080
+http://98.76.54.32:3128
+```
+
+所有腳本均支持 `--proxy-file proxies.txt` 參數，將隨機選擇代理並注入至 HTTP 請求或瀏覽器啟動參數。
+
+## 純 HTTP 抓取模式 (無需瀏覽器)
+
+使用純 HTTP 反向工程流程，解析 initTxt API 並下載純文本，無需啟動瀏覽器引擎。
+
+```bash
+python3 smoke_http_only.py \
+  --csv m1.csv \
+  --output wen_novel_http \
+  --proxy-file proxies.txt \
+  --timeout 15 \
+  --test
+```
+
+上述腳本基於 `http_utils.py` 實現：
+- `extract_init_txt_url_http`：解析 initTxt API URL
+- `fetch_initTxt_content_http`：下載純文本內容
+- `--proxy-file`：可選代理文件，隨機使用代理
 
 ## 法律聲明
 

@@ -1,6 +1,6 @@
 """
 使用Playwright的小說爬蟲
-安裝: pip install playwright
+安裝: pip install playwright playwright-stealth
 初始化: playwright install chromium
 """
 
@@ -8,13 +8,16 @@ import asyncio
 from playwright.async_api import async_playwright
 try:
     from playwright_stealth import stealth_sync
+    STEALTH_AVAILABLE = True
 except ImportError:
     stealth_sync = None
+    STEALTH_AVAILABLE = False
 import csv
 import os
 import re
 import time
 import argparse
+from http_utils import load_proxies, validate_proxies, get_random_proxy
 
 
 async def read_urls_from_csv(csv_file):
@@ -128,11 +131,8 @@ async def crawl_novel_content(page, url):
                 for (const selector of selectors) {
                     const el = document.querySelector(selector);
                     if (el && el.innerText && el.innerText.length > 100) {
-                        const text = el.innerText;
-                        if (!text.includes('[都市小说]') && !text.includes('最新章节')) {
-                            console.log(`Found content in ${selector}`);
-                            return text;
-                        }
+                        console.log(`Found content in ${selector}`);
+                        return el.innerText;
                     }
                 }
 
@@ -230,8 +230,18 @@ async def main():
     parser.add_argument('--headless', action='store_true', help='無頭模式')
     parser.add_argument('--start', type=int, default=0, help='開始索引')
     parser.add_argument('--end', type=int, default=None, help='結束索引')
+    parser.add_argument('--proxy-file', type=str, default=None,
+                        help='可選，代理文件，每行一個代理，支持 http(s)://user:pass@ip:port')
 
     args = parser.parse_args()
+
+    proxies = None
+    if args.proxy_file:
+        proxies = load_proxies(args.proxy_file)
+        proxies = validate_proxies(proxies)
+        if not proxies:
+            print(f"警告: 從 {args.proxy_file} 未加載到可用代理，將不使用代理")
+            proxies = None
 
     # 創建輸出目錄
     if not os.path.exists(args.output):
@@ -252,9 +262,14 @@ async def main():
 
     async with async_playwright() as p:
         # 啟動瀏覽器
+        launch_args = ['--disable-blink-features=AutomationControlled']
+        proxy = get_random_proxy(proxies) if proxies else None
+        if proxy:
+            launch_args.append(f'--proxy-server={proxy}')
+            print(f"使用代理: {proxy}")
         browser = await p.chromium.launch(
             headless=args.headless,
-            args=['--disable-blink-features=AutomationControlled']
+            args=launch_args
         )
 
         # 創建上下文
@@ -265,10 +280,11 @@ async def main():
 
         # 創建頁面
         page = await context.new_page()
-        if stealth_sync:
+        if STEALTH_AVAILABLE:
             stealth_sync(page)
+            print('[*] Playwright stealth plugin applied')
         else:
-            print('playwright-stealth plugin not installed, skipping stealth injection')
+            print('[!] playwright-stealth plugin not installed; continuing without stealth')
 
         # 添加控制台日誌監聽
         page.on('console', lambda msg: print(f'[Console] {msg.text}'))

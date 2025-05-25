@@ -12,15 +12,19 @@ import random
 import subprocess
 import argparse
 import requests
+from http_utils import load_proxies, validate_proxies, get_random_proxy, fetch_initTxt_content_http
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 
 
-def setup_stealth_driver(headless=False):
+def setup_stealth_driver(headless=False, proxy=None):
     """設置隱身模式的Chrome驅動"""
     options = uc.ChromeOptions()
+    if proxy:
+        options.add_argument(f"--proxy-server={proxy}")
+        print(f"使用代理: {proxy}")
 
     if headless:
         options.add_argument('--headless')
@@ -207,7 +211,7 @@ def clean_content(text):
     return '\n'.join(cleaned_lines)
 
 
-def crawl_novel_content_stealth(driver, url, max_retries=3):
+def crawl_novel_content_stealth(driver, url, proxies=None, max_retries=3):
     """使用反檢測技術爬取小說內容"""
     for attempt in range(max_retries):
         try:
@@ -240,7 +244,10 @@ def crawl_novel_content_stealth(driver, url, max_retries=3):
             if init_url:
                 print(f"找到 initTxt URL: {init_url}")
                 try:
-                    txt = fetch_initTxt_content(init_url, referer=url)
+                    if proxies:
+                        txt = fetch_initTxt_content_http(init_url, referer=url, proxies=proxies)
+                    else:
+                        txt = fetch_initTxt_content(init_url, referer=url)
                     print(f"通過 requests 獲取純文本，長度: {len(txt)}")
                     return clean_content(txt)
                 except Exception as e:
@@ -352,8 +359,18 @@ def main():
     parser.add_argument('--headless', action='store_true', help='無頭模式（不推薦）')
     parser.add_argument('--start', type=int, default=0, help='開始索引')
     parser.add_argument('--end', type=int, default=None, help='結束索引')
+    parser.add_argument('--proxy-file', type=str, default=None,
+                        help='可選，代理文件，每行一個代理，支持 http(s)://user:pass@ip:port')
 
     args = parser.parse_args()
+
+    proxies = None
+    if args.proxy_file:
+        proxies = load_proxies(args.proxy_file)
+        proxies = validate_proxies(proxies)
+        if not proxies:
+            print(f"警告: 從 {args.proxy_file} 未加載到可用代理，將不使用代理")
+            proxies = None
 
     # 創建輸出目錄
     if not os.path.exists(args.output):
@@ -374,7 +391,8 @@ def main():
 
     # 設置驅動
     print("初始化隱身模式瀏覽器...")
-    driver = setup_stealth_driver(headless=args.headless)
+    proxy = get_random_proxy(proxies) if proxies else None
+    driver = setup_stealth_driver(headless=args.headless, proxy=proxy)
 
     try:
         success_count = 0
@@ -391,7 +409,7 @@ def main():
             chapter_num = chapter_match.group(1) if chapter_match else str(current_index + 1)
 
             # 爬取內容
-            content = crawl_novel_content_stealth(driver, url)
+            content = crawl_novel_content_stealth(driver, url, proxies)
 
             if content:
                 # 保存內容

@@ -19,17 +19,23 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 import pyautogui
 import requests
+from http_utils import load_proxies, validate_proxies, get_random_proxy, fetch_initTxt_content_http
 
 
 class StealthCrawler:
-    def __init__(self, headless=False):
+    def __init__(self, headless=False, proxy=None, proxies=None):
         self.driver = None
         self.headless = headless
-        self.setup_driver()
+        self.proxy = proxy
+        self.proxies = proxies
+        self.setup_driver(proxy)
 
-    def setup_driver(self):
+    def setup_driver(self, proxy=None):
         """設置超級隱身模式的瀏覽器"""
         options = uc.ChromeOptions()
+        if proxy:
+            options.add_argument(f"--proxy-server={proxy}")
+            print(f"使用代理: {proxy}")
 
         # 不使用無頭模式以避免檢測
         if self.headless:
@@ -286,7 +292,12 @@ class StealthCrawler:
         init_url = extract_init_txt_url(self.driver)
         if init_url:
             try:
-                txt = fetch_initTxt_content(init_url, referer=self.driver.current_url)
+                if self.proxies:
+                    txt = fetch_initTxt_content_http(init_url,
+                                                   referer=self.driver.current_url,
+                                                   proxies=self.proxies)
+                else:
+                    txt = fetch_initTxt_content(init_url, referer=self.driver.current_url)
                 return txt
             except Exception as e:
                 print(f"fetch initTxt 失敗: {e}")
@@ -415,8 +426,18 @@ def main():
     parser.add_argument('--start', type=int, default=0, help='開始索引')
     parser.add_argument('--end', type=int, default=None, help='結束索引')
     parser.add_argument('--headless', action='store_true', help='無頭模式（不推薦）')
+    parser.add_argument('--proxy-file', type=str, default=None,
+                        help='可選，代理文件，每行一個代理，支持 http(s)://user:pass@ip:port')
 
     args = parser.parse_args()
+
+    proxies = None
+    if args.proxy_file:
+        proxies = load_proxies(args.proxy_file)
+        proxies = validate_proxies(proxies)
+        if not proxies:
+            print(f"警告: 從 {args.proxy_file} 未加載到可用代理，將不使用代理")
+            proxies = None
 
     # 創建輸出目錄
     os.makedirs(args.output, exist_ok=True)
@@ -439,7 +460,8 @@ def main():
     print(f"準備爬取 {len(urls)} 個URL")
 
     # 創建爬蟲實例
-    crawler = StealthCrawler(headless=args.headless)
+    proxy = get_random_proxy(proxies) if proxies else None
+    crawler = StealthCrawler(headless=args.headless, proxy=proxy, proxies=proxies)
 
     try:
         for i, url in enumerate(urls):

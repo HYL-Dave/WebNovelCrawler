@@ -1,0 +1,6 @@
+# proxies.txt: 請在此處添加代理，每行一個，支持 http://user:pass@ip:port 或 http://ip:port
+# 可用 '#' 開頭註釋
+
+# 示例：
+# http://user:passwd@123.45.67.89:8080
+# http://98.76.54.32:3128
