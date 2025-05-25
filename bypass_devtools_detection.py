@@ -9,25 +9,42 @@ import re
 from selenium.webdriver.common.by import By
 
 
-def setup_anti_detection_driver():
-    """設置反檢測瀏覽器"""
-    options = uc.ChromeOptions()
-
+def _build_chrome_options():
+    """建立並回傳一組新的 uc.ChromeOptions()，附帶常用隱匿設定。"""
+    opts = uc.ChromeOptions()
     # 關鍵：禁用開發者工具相關功能
-    options.add_argument('--disable-blink-features=AutomationControlled')
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
+    opts.add_argument('--disable-blink-features=AutomationControlled')
 
     # 禁用開發者工具檢測
-    options.add_argument('--disable-dev-tools')
+    opts.add_argument('--disable-dev-tools')
 
     # 其他設置
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--window-size=1920,1080')
-    options.add_argument('--start-maximized')
+    opts.add_argument('--no-sandbox')
+    opts.add_argument('--disable-gpu')
+    opts.add_argument('--window-size=1920,1080')
+    opts.add_argument('--start-maximized')
 
-    driver = uc.Chrome(options=options)
+    return opts
+
+
+def setup_anti_detection_driver():
+    """設置反檢測瀏覽器，並在版本不符時自動下載對應 ChromeDriver。"""
+
+    def _launch(version_main: int | None = None):
+        return uc.Chrome(options=_build_chrome_options(), version_main=version_main)
+
+    try:
+        driver = _launch()
+    except Exception as e:
+        msg = str(e)
+        m = re.search(r"Current browser version is (\d+)", msg)
+        if not m:
+            raise  # 無法解析版本，直接拋出
+
+        version_main = int(m.group(1))
+        print(f"偵測到 Chrome 主版本 {version_main}，重新下載相容的 ChromeDriver ...")
+
+        driver = _launch(version_main)
 
     # 注入反檢測腳本
     driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
@@ -249,6 +266,8 @@ def main():
 
     print("=== 方法1: 直接HTTP請求 ===")
     txt_data = get_content_directly(url)
+    content = None  # 預先定義，避免後續引用時尚未賦值
+
     if txt_data:
         content = decode_txt_content(txt_data)
         if content:
@@ -258,7 +277,7 @@ def main():
             print("\n內容已保存到 decoded_content.txt")
 
     # 如果方法1失敗，嘗試方法2
-    if not txt_data or not content:
+    if (not txt_data) or (not content):
         print("\n=== 方法2: 使用反檢測瀏覽器 ===")
         content = get_content_with_browser(url)
         if content:
