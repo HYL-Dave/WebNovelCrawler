@@ -314,13 +314,13 @@ class PreciseContentCrawler:
             return None
 
     def crawl_page(self, url):
-        """爬取單個頁面"""
+        """爬取單個頁面，返回 (正文文本, 內容區域截圖)"""
         try:
             # 獲取內容區域的文本和截圖
             content_text, content_image = self.capture_content_only(url)
 
             if not content_image:
-                return None
+                return None, None
 
             # 統計原始文本
             original_chinese = sum(1 for c in content_text if '\u4e00' <= c <= '\u9fff') if content_text else 0
@@ -355,11 +355,11 @@ class PreciseContentCrawler:
             final_chinese = sum(1 for c in final_content if '\u4e00' <= c <= '\u9fff')
             print(f"  最終內容: {len(final_content)} 字符, {final_chinese} 中文")
 
-            return final_content
+            return final_content, content_image
 
         except Exception as e:
             print(f"  處理失敗: {e}")
-            return None
+            return None, None
 
     def _merge_contents(self, text1, text2):
         """智能合併兩段內容"""
@@ -433,7 +433,7 @@ class PreciseContentCrawler:
         for i, url in enumerate(urls, 1):
             print(f"\n進度: {i}/{len(urls)}")
 
-            content = self.crawl_page(url)
+            content, image = self.crawl_page(url)
 
             if content and len(content) > 100:
                 # 保存內容
@@ -443,11 +443,17 @@ class PreciseContentCrawler:
                 with open(filepath, 'w', encoding='utf-8') as f:
                     f.write(content)
 
+                # 保存原始圖片
+                image_filename = f"{i:04d}_chapter.png"
+                image_path = os.path.join(output_dir, image_filename)
+                image.save(image_path)
+
                 results.append({
                     'index': i,
                     'url': url,
                     'status': 'success',
                     'file': filepath,
+                    'image_file': image_path,
                     'length': len(content)
                 })
                 print(f"  ✓ 已保存")
