@@ -296,11 +296,15 @@ class PreciseContentCrawler:
             if text_preview:
                 messages[1]["content"][0]["text"] += f"\n\n參考：頁面上的部分文字為：\n{text_preview[:500]}..."
 
+            # response = self.openai_client.chat.completions.create(
+            #     model="gpt-4.1-mini",
+            #     messages=messages,
+            #     max_tokens=100000,
+            #     temperature=0.3
+            # )
             response = self.openai_client.chat.completions.create(
-                model="gpt-4.1-mini",
+                model="o4-mini",
                 messages=messages,
-                max_tokens=10000,
-                temperature=0.3
             )
 
             return response.choices[0].message.content
@@ -384,19 +388,32 @@ class PreciseContentCrawler:
         # 只保留標記前的內容
         text = re.split(markers_pattern, text)[0]
 
-        # 移除常見廣告語
+        # 移除常見廣告語（僅針對單行，不跨多行）
         ad_patterns = [
-            r'本章未完.*?點擊.*?下一頁',
-            r'請記住.*?域名',
-            r'手機.*?閱讀',
+            r'本章未完[^\n]*?點擊[^\n]*?下一頁',
+            r'請記住[^\n]*?域名',
+            r'手機[^\n]*?閱讀',
             r'最新網址',
             r'無彈窗',
             r'更新最快',
-            r'本站.*?域名'
+            r'本站[^\n]*?域名',
+
+            # 新增 – 針對 m.zashuwu.com 常見插入行
+            r'海量小说[^\n]*',
+            r'【[^\n]*?阅读度】',
+            r'记邮件[^\n]*?@[^\n]*',
+            r'最新网址发邮件[^\n]*',
+            r'发邮件取最新域名[^\n]*',
+            r'记住[：:][^\n]*?ZASHUWU\.COM',
+            r'杂书屋[：:][^\n]*',
+            r'注册会员可关闭广告[^\n]*',
+            r'您当前阅读进度[^\n]*',
+            r'剩\s*\d+\s*章待阅[^\n]*',
+            r'阅读历史[^\n]*?搜书',
         ]
 
         for pattern in ad_patterns:
-            text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
         # 清理多餘空行
         text = re.sub(r'\n\s*\n+', '\n\n', text)
