@@ -15,6 +15,22 @@ from urllib.parse import urljoin, urlparse
 FORCE_FIREFOX = True
 
 
+def read_urls_from_csv(csv_file):
+    """從 CSV 文件讀取 URL（修復版）"""
+    urls = []
+    with open(csv_file, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        # 跳過標題行
+        next(reader, None)
+
+        for row in reader:
+            # m1.csv 格式：第一列是章節名，第二列是 URL
+            if len(row) > 1 and row[1].startswith('http'):
+                url = row[1].strip('"')  # 移除可能的引號
+                urls.append(url)
+
+    return urls
+
 class ComprehensiveCrawler:
     def __init__(self, use_ocr=False, delay=3, headless=True):
         self.use_ocr = use_ocr
@@ -275,12 +291,7 @@ def main():
     args = parser.parse_args()
 
     # 讀取 CSV
-    urls = []
-    with open(args.csv, 'r', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        for row in reader:
-            if row and row[0].startswith('http'):
-                urls.append(row[0])
+    urls = read_urls_from_csv(args.csv)
 
     print(f"找到 {len(urls)} 個URL")
 
