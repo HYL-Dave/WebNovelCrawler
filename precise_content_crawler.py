@@ -296,16 +296,16 @@ class PreciseContentCrawler:
             if text_preview:
                 messages[1]["content"][0]["text"] += f"\n\n參考：頁面上的部分文字為：\n{text_preview[:500]}..."
 
-            # response = self.openai_client.chat.completions.create(
-            #     model="gpt-4.1-mini",
-            #     messages=messages,
-            #     max_tokens=100000,
-            #     temperature=0.3
-            # )
             response = self.openai_client.chat.completions.create(
-                model="o4-mini",
+                model="gpt-4.1-mini",
                 messages=messages,
+                max_tokens=32768,
+                temperature=0.3
             )
+            # response = self.openai_client.chat.completions.create(
+            #     model="o4-mini",
+            #     messages=messages,
+            # )
 
             return response.choices[0].message.content
 
@@ -387,6 +387,11 @@ class PreciseContentCrawler:
         markers_pattern = r'\[推荐作品\]|\[更多相关作品\]|\[章节报错\]'
         # 只保留標記前的內容
         text = re.split(markers_pattern, text)[0]
+
+        # 移除頭部非正文内容：只保留從「第X章」開始
+        m = re.search(r'(^第[0-9零一二三四五六七八九十百千万]+[章回].*)', text, flags=re.MULTILINE)
+        if m:
+            text = text[m.start(1):]
 
         # 移除常見廣告語（僅針對單行，不跨多行）
         ad_patterns = [
