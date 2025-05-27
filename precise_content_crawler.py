@@ -271,7 +271,8 @@ class PreciseContentCrawler:
 3. 保持原有的段落格式
 4. 忽略頁面上的廣告、導航等無關內容
 5. 只輸出小說正文，不要任何解釋
-6. 不需要的目錄和其他小說的連結直接忽略"""
+6. 不需要的目錄和其他小說的連結直接忽略
+7. 如果OCR後發現有缺字可以補字成完整的詞"""
                 },
                 {
                     "role": "user",
@@ -377,8 +378,13 @@ class PreciseContentCrawler:
         if not text:
             return ""
 
-        # 移除常見廣告語
+        # 去除推薦作品、更多相關作品、章節報錯及其後續內容
         import re
+        markers_pattern = r'\[推荐作品\]|\[更多相关作品\]|\[章节报错\]'
+        # 只保留標記前的內容
+        text = re.split(markers_pattern, text)[0]
+
+        # 移除常見廣告語
         ad_patterns = [
             r'本章未完.*?點擊.*?下一頁',
             r'請記住.*?域名',
