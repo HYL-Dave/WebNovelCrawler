@@ -40,10 +40,27 @@ class PreciseContentCrawler:
         """初始化"""
         # 設置瀏覽器
         options = Options()
-        options.add_argument('--headless')
+
+        # 無頭模式
+        options.add_argument('-headless')
+
         # 設置窗口大小以確保內容完整顯示
         options.add_argument('--width=1200')
         options.add_argument('--height=800')
+
+        # 修正: geckodriver 對 snap 包裝腳本會拋 "binary is not a Firefox executable"
+        firefox_bin_env = os.getenv('FIREFOX_BINARY')
+        candidate_bins = [
+            firefox_bin_env,
+            '/snap/firefox/current/usr/lib/firefox/firefox',
+            '/usr/lib/firefox/firefox',
+            '/usr/lib64/firefox/firefox',
+        ]
+
+        for bin_path in candidate_bins:
+            if bin_path and os.path.isfile(bin_path) and os.access(bin_path, os.X_OK):
+                options.binary_location = bin_path
+                break
 
         self.driver = webdriver.Firefox(options=options)
 
@@ -253,7 +270,8 @@ class PreciseContentCrawler:
 2. 如果有些文字是圖片形式，請識別並轉為文字
 3. 保持原有的段落格式
 4. 忽略頁面上的廣告、導航等無關內容
-5. 只輸出小說正文，不要任何解釋"""
+5. 只輸出小說正文，不要任何解釋
+6. 不需要的目錄和其他小說的連結直接忽略"""
                 },
                 {
                     "role": "user",
@@ -278,9 +296,9 @@ class PreciseContentCrawler:
                 messages[1]["content"][0]["text"] += f"\n\n參考：頁面上的部分文字為：\n{text_preview[:500]}..."
 
             response = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=messages,
-                max_tokens=4000,
+                max_tokens=10000,
                 temperature=0.3
             )
 
