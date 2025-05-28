@@ -13,6 +13,14 @@ Usage:
       --image precise_output_v2/0120_chapter.png \
       --ref precise_output_v2/0120_chapter.txt \
       [--chunk_height 1000] [--overlap 200] [--min_overlap_chars 10] [--model gpt-4.1-mini] [--overlap 40] [--min_overlap_chars 10]
+
+python gpt4_mini_ocr_experiment.py \
+      --image precise_output_v2/0120_chapter.png \
+      --ref precise_output_v2/0120_chapter.txt \
+      --chunk_height 760 \
+      --overlap 40 \
+      --min_overlap_chars 10 \
+      --model gpt-4.1-mini
 """
 
 import argparse
@@ -20,6 +28,7 @@ import os
 from difflib import SequenceMatcher
 
 from PIL import Image
+import base64
 import openai
 
 
@@ -48,13 +57,18 @@ def split_image(image_path: str, max_height: int, overlap: int) -> list[str]:
 
 
 def ocr_chunk(image_path: str, model: str) -> str:
-    """Call GPT model to OCR the given image chunk."""
+    """Call GPT model to OCR the given image chunk via image_url content parts."""
     with open(image_path, "rb") as f:
-        resp = openai.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": "请识别以下图片中的文字，并仅返回纯文本，不要额外说明："}],
-            files=[("file", (os.path.basename(image_path), f, "image/png"))],
-        )
+        img_data = f.read()
+    img_b64 = base64.b64encode(img_data).decode("ascii")
+    parts = [
+        {"type": "text", "text": "请识别以下图片中的文字，并仅返回纯文本，不要额外说明："},
+        {"type": "image_url", "image_url": {"url": img_b64, "detail": "high"}},
+    ]
+    resp = openai.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": parts}],
+    )
     return resp.choices[0].message.content.strip()
 
 
