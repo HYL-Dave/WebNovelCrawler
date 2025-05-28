@@ -12,9 +12,10 @@ Usage:
   python gpt4_mini_ocr_experiment.py \
       --image precise_output_v2/0120_chapter.png \
       --ref precise_output_v2/0120_chapter.txt \
-      [--chunk_height 1000] [--overlap 200] [--min_overlap_chars 10] [--model gpt-4.1-mini] [--overlap 40] [--min_overlap_chars 10]
+      [--chunk_height 1000] [--overlap 200] [--min_overlap_chars 10] [--model gpt-4.1-mini]
 
-python gpt4_mini_ocr_experiment.py \
+Example:
+  python gpt4_mini_ocr_experiment.py \
       --image precise_output_v2/0120_chapter.png \
       --ref precise_output_v2/0120_chapter.txt \
       --chunk_height 760 \
@@ -28,8 +29,8 @@ import os
 from difflib import SequenceMatcher
 
 from PIL import Image
-import base64
 import openai
+import base64
 
 
 def split_image(image_path: str, max_height: int, overlap: int) -> list[str]:
@@ -57,13 +58,13 @@ def split_image(image_path: str, max_height: int, overlap: int) -> list[str]:
 
 
 def ocr_chunk(image_path: str, model: str) -> str:
-    """Call GPT model to OCR the given image chunk via image_url content parts."""
+    """Call GPT model to OCR the given image chunk via Base64 data URI (openai>=1.x)."""
     with open(image_path, "rb") as f:
-        img_data = f.read()
-    img_b64 = base64.b64encode(img_data).decode("ascii")
+        b64 = base64.b64encode(f.read()).decode("ascii")
+    data_uri = f"data:image/png;base64,{b64}"
     parts = [
-        {"type": "text", "text": "请识别以下图片中的文字，并仅返回纯文本，不要额外说明："},
-        {"type": "image_url", "image_url": {"url": img_b64, "detail": "high"}},
+        {"type": "text",      "text": "请识别以下图片中的文字，并仅返回纯文本，不要额外说明："},
+        {"type": "image_url", "image_url": {"url": data_uri, "detail": "high"}},
     ]
     resp = openai.chat.completions.create(
         model=model,
