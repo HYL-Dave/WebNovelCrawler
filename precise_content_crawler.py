@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
 """
 精準內容爬蟲
-只爬取和處理真正的內容區域，支持 OCR 和 OpenAI
+只爬取和處理真正的內容區域，支持 OCR、OpenAI 與 GPT 影像分塊 OCR 校對流程
+
+python precise_content_crawler.py \
+      --csv urls.csv \
+      --rules content_rules.json \
+      --openai --openai-key YOUR_KEY \
+      --gptocr \
+      --chunk_height 760 \
+      --overlap 20 \
+      --min_overlap_chars 20 \
+      --ocr_model o4-mini \
+      --proofread_model o4-mini \
+      --output precise_output_v2
+
+这样，爬虫会先截图并保存 {序号}_chapter.png，随后按 GPT‑OCR 流程生成并保存 {序号}_chapter_gptocr.txt，即为分块 OCR 合并并校对后的最终文本，完全集成于一个脚本中。
 """
 
 import os
@@ -17,6 +31,79 @@ from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image
 from io import BytesIO
 import base64
+import openai
+from difflib import SequenceMatcher
+
+
+def split_image(image_path: str, max_height: int, overlap: int) -> list[str]:
+    """Split the input image into vertically overlapping chunks."""
+    img = Image.open(image_path)
+    width, height = img.size
+    base, _ = os.path.splitext(image_path)
+    if overlap >= max_height:
+        raise ValueError("overlap must be smaller than chunk_height")
+    step = max_height - overlap
+
+    chunks: list[str] = []
+    top = 0
+    idx = 0
+    while top < height:
+        bottom = min(top + max_height, height)
+        tile = img.crop((0, top, width, bottom))
+        chunk_path = f"{base}_chunk_{idx}.png"
+        tile.save(chunk_path)
+        chunks.append(chunk_path)
+        idx += 1
+        if bottom >= height:
+            break
+        top += step
+    return chunks
+
+
+def ocr_chunk(image_path: str, model: str) -> str:
+    """Call GPT model to OCR the given image chunk via Base64 data URI (openai>=1.x)."""
+    with open(image_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("ascii")
+    data_uri = f"data:image/png;base64,{b64}"
+    parts = [
+        {"type": "text",      "text": "请识别以下图片中的文字，并仅返回纯文本，不要额外说明："},
+        {"type": "image_url", "image_url": {"url": data_uri, "detail": "high"}},
+    ]
+    resp = openai.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": parts}],
+    )
+    return resp.choices[0].message.content.strip()
+
+
+def merge_texts(chunks: list[str], min_overlap_chars: int) -> str:
+    """Merge OCR outputs from overlapping chunks, removing duplicated overlaps."""
+    merged = chunks[0]
+    for text in chunks[1:]:
+        sm = SequenceMatcher(None, merged, text)
+        match = sm.find_longest_match(0, len(merged), 0, len(text))
+        if (
+            match.size >= min_overlap_chars
+            and match.a + match.size == len(merged)
+            and match.b == 0
+        ):
+            text = text[match.size:]
+        merged += text
+    return merged.strip()
+
+
+def proofread_text(text: str, model: str = "o4-mini") -> str:
+    """Use GPT to proofread OCR result, correcting typos/omissions and returning clean text."""
+    prompt = (
+        "你是中文文本校对助手。\n"
+        "下面是一段OCR识别的中文文本，请你纠正其中的错字、漏字或标点，并仅输出校对后的正文：\n\n"
+        + text
+    )
+    resp = openai.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.choices[0].message.content.strip()
 
 
 class PreciseContentCrawler:
@@ -448,12 +535,31 @@ class PreciseContentCrawler:
                 image_path = os.path.join(output_dir, image_filename)
                 image.save(image_path)
 
+                # GPT-OCR pipeline: split image into chunks, OCR, merge and optional proofreading
+                gptocr_file = None
+                if getattr(self, 'gptocr', False):
+                    print(f"  [GPT-OCR] processing: {image_path}")
+                    chunks = split_image(image_path, self.gptocr_chunk_height, self.gptocr_overlap)
+                    ocr_texts = []
+                    for idx2, chunk in enumerate(chunks, 1):
+                        print(f"    chunk {idx2}/{len(chunks)}: {chunk}")
+                        ocr_texts.append(ocr_chunk(chunk, self.gptocr_ocr_model))
+                    merged = merge_texts(ocr_texts, self.gptocr_min_overlap_chars)
+                    if self.gptocr_proofread_model:
+                        print(f"  [GPT-OCR] proofreading merged text with {self.gptocr_proofread_model}...")
+                        merged = proofread_text(merged, self.gptocr_proofread_model)
+                    gptocr_file = os.path.join(output_dir, f"{i:04d}_chapter_gptocr.txt")
+                    with open(gptocr_file, 'w', encoding='utf-8') as gf:
+                        gf.write(merged)
+                    print(f"  ✓ GPT-OCR proofread saved to {gptocr_file}")
+
                 results.append({
                     'index': i,
                     'url': url,
                     'status': 'success',
                     'file': filepath,
                     'image_file': image_path,
+                    'gptocr_file': gptocr_file,
                     'length': len(content)
                 })
                 print(f"  ✓ 已保存")
@@ -484,6 +590,12 @@ def main():
     parser.add_argument('--openai-key', help='OpenAI API Key')
     parser.add_argument('--output', default='precise_output', help='輸出目錄')
     parser.add_argument('--test', action='store_true', help='測試模式')
+    parser.add_argument('--gptocr', action='store_true', help='啟用 GPT 影像分塊 OCR 與校對流程')
+    parser.add_argument('--chunk_height', type=int, default=760, help='GPT OCR 圖像塊最大高度（px）')
+    parser.add_argument('--overlap', type=int, default=20, help='GPT OCR 圖像塊垂直重疊（px）')
+    parser.add_argument('--min_overlap_chars', type=int, default=20, help='GPT OCR 合併時最少重疊字符數量')
+    parser.add_argument('--ocr_model', default='o4-mini', help='GPT OCR 模型名稱')
+    parser.add_argument('--proofread_model', default='o4-mini', help='GPT 校對模型名稱（留空跳過校對）')
 
     args = parser.parse_args()
 
@@ -508,6 +620,13 @@ def main():
         use_openai=args.openai,
         openai_key=args.openai_key
     )
+    # GPT-OCR pipeline settings
+    crawler.gptocr = args.gptocr
+    crawler.gptocr_chunk_height = args.chunk_height
+    crawler.gptocr_overlap = args.overlap
+    crawler.gptocr_min_overlap_chars = args.min_overlap_chars
+    crawler.gptocr_ocr_model = args.ocr_model
+    crawler.gptocr_proofread_model = args.proofread_model
 
     # 開始爬取
     results = crawler.crawl_urls(urls, args.output)
