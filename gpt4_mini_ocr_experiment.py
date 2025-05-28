@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 OCR experiment using GPT-4.1-mini:
-- Split input image into chunks
+- Split input image into overlapping chunks
 - Transcribe each chunk via GPT-4.1-mini vision
-- Merge results and compare against reference text
+- Merge results (deduplicate overlaps) and compare against reference text
 
 Dependencies:
   pip install openai pillow
@@ -12,7 +12,7 @@ Usage:
   python gpt4_mini_ocr_experiment.py \
       --image precise_output_v2/0120_chapter.png \
       --ref precise_output_v2/0120_chapter.txt \
-      [--chunk_height 1000] [--model gpt-4.1-mini]
+      [--chunk_height 1000] [--overlap 200] [--min_overlap_chars 10] [--model gpt-4.1-mini] [--overlap 40] [--min_overlap_chars 10]
 """
 
 import argparse
@@ -23,32 +23,37 @@ from PIL import Image
 import openai
 
 
-def split_image(image_path: str, max_height: int) -> list[str]:
-    """Split the image vertically into chunks of max_height."""
+def split_image(image_path: str, max_height: int, overlap: int) -> list[str]:
+    """Split the input image into vertically overlapping chunks."""
     img = Image.open(image_path)
     width, height = img.size
-    chunks = []
     base, _ = os.path.splitext(image_path)
-    for idx, top in enumerate(range(0, height, max_height)):
+    if overlap >= max_height:
+        raise ValueError("`overlap` must be smaller than `chunk_height`")
+    step = max_height - overlap
+    chunks: list[str] = []
+    top = 0
+    idx = 0
+    while top < height:
         bottom = min(top + max_height, height)
-        box = (0, top, width, bottom)
-        chunk = img.crop(box)
+        tile = img.crop((0, top, width, bottom))
         chunk_path = f"{base}_chunk_{idx}.png"
-        chunk.save(chunk_path)
+        tile.save(chunk_path)
         chunks.append(chunk_path)
+        idx += 1
+        if bottom >= height:
+            break
+        top += step
     return chunks
 
 
 def ocr_chunk(image_path: str, model: str) -> str:
     """Call GPT model to OCR the given image chunk."""
     with open(image_path, "rb") as f:
-        # Use the new OpenAI Python client interface for chat completions (openai>=1.0.0)
         resp = openai.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "user", "content": "请识别以下图片中的文字，并仅返回纯文本，不要额外说明："},
-                {"role": "user", "content": f},
-            ],
+            messages=[{"role": "user", "content": "请识别以下图片中的文字，并仅返回纯文本，不要额外说明："}],
+            files=[("file", (os.path.basename(image_path), f, "image/png"))],
         )
     return resp.choices[0].message.content.strip()
 
@@ -56,6 +61,22 @@ def ocr_chunk(image_path: str, model: str) -> str:
 def compute_accuracy(reference: str, hypothesis: str) -> float:
     """Compute simple similarity ratio between reference and hypothesis."""
     return SequenceMatcher(None, reference, hypothesis).ratio()
+
+
+def merge_texts(chunks: list[str], min_overlap_chars: int) -> str:
+    """Merge OCR outputs from overlapping chunks, removing duplicated overlaps."""
+    merged = chunks[0]
+    for text in chunks[1:]:
+        sm = SequenceMatcher(None, merged, text)
+        match = sm.find_longest_match(0, len(merged), 0, len(text))
+        if (
+            match.size >= min_overlap_chars
+            and match.a + match.size == len(merged)
+            and match.b == 0
+        ):
+            text = text[match.size:]
+        merged += text
+    return merged.strip()
 
 
 def main():
@@ -73,17 +94,29 @@ def main():
     parser.add_argument(
         "--model", default="gpt-4.1-mini", help="GPT model name for OCR"
     )
+    parser.add_argument(
+        "--overlap",
+        type=int,
+        default=200,
+        help="Vertical overlap between chunks (px)",
+    )
+    parser.add_argument(
+        "--min_overlap_chars",
+        type=int,
+        default=10,
+        help="Min characters to consider overlap when merging text chunks",
+    )
     args = parser.parse_args()
 
-    # Split image and run OCR on each part
-    chunks = split_image(args.image, args.chunk_height)
+    # Split image into overlapping chunks and run OCR on each
+    chunks = split_image(args.image, args.chunk_height, args.overlap)
     outputs = []
     for idx, chunk_path in enumerate(chunks, 1):
         print(f"[{idx}/{len(chunks)}] OCR chunk: {chunk_path}")
         text = ocr_chunk(chunk_path, args.model)
         outputs.append(text)
 
-    result_text = "\n".join(outputs).strip()
+    result_text = merge_texts(outputs, args.min_overlap_chars)
 
     # Save OCR result
     out_file = f"{os.path.splitext(args.image)[0]}_ocr_{args.model}.txt"
