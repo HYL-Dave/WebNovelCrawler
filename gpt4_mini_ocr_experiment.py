@@ -12,7 +12,7 @@ Usage:
   python gpt4_mini_ocr_experiment.py \
       --image precise_output_v2/0120_chapter.png \
       --ref precise_output_v2/0120_chapter.txt \
-      [--chunk_height 1000] [--overlap 200] [--min_overlap_chars 10] [--model gpt-4.1-mini]
+      [--chunk_height 1000] [--overlap 200] [--min_overlap_chars 10] [--model gpt-4.1-mini] [--proofread_model gpt-4.1-mini]
 
 Example:
   python gpt4_mini_ocr_experiment.py \
@@ -21,7 +21,8 @@ Example:
       --chunk_height 760 \
       --overlap 40 \
       --min_overlap_chars 10 \
-      --model gpt-4.1-mini
+      --model gpt-4.1-mini \
+      --proofread_model gpt-4.1-mini
 """
 
 import argparse
@@ -94,6 +95,20 @@ def merge_texts(chunks: list[str], min_overlap_chars: int) -> str:
     return merged.strip()
 
 
+def proofread_text(text: str, model: str = "gpt-4.1-mini") -> str:
+    """Use GPT to proofread OCR result, correcting typos/omissions and returning clean text."""
+    prompt = (
+        "你是中文文本校对助手。\n"
+        "下面是一段OCR识别的中文文本，请你纠正其中的错字、漏字或标点，并仅输出校对后的正文：\n\n"
+        + text
+    )
+    resp = openai.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.choices[0].message.content.strip()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="OCR experiment with GPT-4.1-mini and accuracy measurement"
@@ -121,6 +136,11 @@ def main():
         default=10,
         help="Min characters to consider overlap when merging text chunks",
     )
+    parser.add_argument(
+        "--proofread_model",
+        default="",
+        help="GPT model name for proofreading OCR merged text (skip if empty)",
+    )
     args = parser.parse_args()
 
     # Split image into overlapping chunks and run OCR on each
@@ -138,6 +158,16 @@ def main():
     with open(out_file, "w", encoding="utf-8") as outf:
         outf.write(result_text)
     print(f"OCR output saved to {out_file}")
+
+    # Stage 2: optional proofreading with GPT
+    if args.proofread_model:
+        print(f"[校对阶段] 用 {args.proofread_model} 对合并结果做校对纠错…")
+        corrected = proofread_text(result_text, args.proofread_model)
+        proof_file = f"{os.path.splitext(args.image)[0]}_ocr_{args.model}_proofread.txt"
+        with open(proof_file, "w", encoding="utf-8") as pf:
+            pf.write(corrected)
+        print(f"Proofread output saved to {proof_file}")
+        result_text = corrected
 
     # Load reference and compute accuracy
     with open(args.ref, "r", encoding="utf-8") as ref_f:
