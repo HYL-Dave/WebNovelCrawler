@@ -24,11 +24,13 @@ def ocr_chunks_batch(image_paths: list[str], model: str) -> list[str]:
     Batch OCR for multiple chunks: send a single request with multiple image_url parts.
     Expects a JSON array of recognized texts corresponding to image_paths order.
     """
-    parts = [
-        {"type": "text", "text": (
-            "请识别以下多张图片（按顺序编号）中的文字，并以 JSON 数组形式返回每张图片对应的纯文本字符串，仅输出 JSON 数组，不要额外说明："
-        )}
-    ]
+    # Prompt: request a strict JSON array where each element matches one chunk in order
+    prompt = (
+        f"请识别下面{len(image_paths)}个 chunk（分别按顺序编号），"
+        "并严格按照顺序将每个 chunk 的识别文本作为 JSON 数组中的一个字符串返回。"
+        "仅输出合法的 JSON 数组，不要多余注释或解释。"
+    )
+    parts = [{"type": "text", "text": prompt}]
     for path in image_paths:
         with open(path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode("ascii")
