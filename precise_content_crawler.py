@@ -490,7 +490,8 @@ class PreciseContentCrawler:
             # 新增 – 針對 m.zashuwu.com 常見插入行
             r'海量小说[^\n]*',
             r'【[^\n]*?阅读度】',
-            r'记邮件[^\n]*?@[^\n]*',
+            # 邮件/邮箱寻址广告，如“记邮箱找地址：Dz@ZASHUWU.COM”
+            r'记(?:邮件|邮箱)[^\n]*?@[^\n]*',
             # 根据样本：邮箱地址：Dz@ZASHUWU.COM
             r'邮箱地址[:：][^\n]*',
             r'最新网址发邮件[^\n]*',
