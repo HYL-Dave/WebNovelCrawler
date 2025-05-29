@@ -3,9 +3,10 @@
 End-to-end batch GPT-OCR: crawl chapter images and perform batch OCR per image.
 Usage:
     python precise_content_crawler_batch_ocr.py \
-        --csv urls.csv \
+        --csv m1.csv m2.csv [more.csv ...] \
         --rules content_rules.json \
         --openai-key YOUR_KEY \
+        --workers 4 \
         --chunk-height 760 \
         --overlap 20 \
         --min-overlap-chars 20 \
@@ -13,10 +14,11 @@ Usage:
         --proofread-model o4-mini \
         --output-dir precise_output_batch
 
-This script reads URLs from a CSV, captures the content region screenshot for each URL,
-splits each image into overlapping chunks, sends all chunks of the same image in a single
-GPT-OCR request, merges and optionally proofreads the OCR results, then saves both the
-raw chapter image and the final text.
+This script reads URLs from one or more CSV files (creating a subdirectory per CSV),
+captures the content region screenshot for each URL, splits each image into overlapping
+chunks, sends all chunks of the same image in a single GPT-OCR request, merges and
+optionally proofreads the OCR results, then saves both the raw chapter image and the
+final text. It can run jobs in parallel using multiple worker processes.
 """
 import argparse
 import os
@@ -30,6 +32,8 @@ from precise_content_crawler import (
     proofread_text,
     PreciseContentCrawler,
 )
+import concurrent.futures
+import sys
 
 
 def clean_content(text: str) -> str:
@@ -98,13 +102,42 @@ def batch_ocr_for_image(
         merged = proofread_text(merged, proofread_model)
     return clean_content(merged)
 
+def process_job(job, rules_file, ocr_model, proofread_model,
+                chunk_height, overlap, min_overlap_chars, openai_key):
+    sub_out, idx, url = job
+    openai.api_key = openai_key
+    crawler = PreciseContentCrawler(
+        rules_file=rules_file, use_ocr=False, use_openai=False, openai_key=None
+    )
+    name = os.path.basename(sub_out)
+    print(f"[{name}|{idx}] {url}")
+    _, content_image = crawler.capture_content_only(url)
+    if not content_image:
+        print(f"  failed to capture content image for {url}")
+        return
+
+    base = os.path.join(sub_out, f"{idx:04d}_chapter")
+    image_path = base + ".png"
+    content_image.save(image_path)
+    print(f"  saved image: {image_path}")
+
+    text = batch_ocr_for_image(
+        image_path, ocr_model, proofread_model,
+        chunk_height, overlap, min_overlap_chars
+    )
+    out_path = base + "_gptocr_batch.txt"
+    with open(out_path, "w", encoding="utf-8") as fw:
+        fw.write(text)
+    print(f"  saved OCR result: {out_path}")
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="Batch GPT-OCR end-to-end: crawl images and OCR"
     )
     parser.add_argument(
-        "--csv", required=True, help="CSV file containing URLs list"
+        "--csv", nargs="+", required=True,
+        help="CSV file(s) containing URLs list(s)"
     )
     parser.add_argument(
         "--rules", help="content selector rules JSON file"
@@ -137,54 +170,67 @@ def main():
         help="OpenAI API key for GPT-OCR",
     )
     parser.add_argument(
+        "--workers", type=int, default=1,
+        help="number of parallel worker processes (default: 1)",
+    )
+    parser.add_argument(
         "--test", action="store_true",
-        help="only process first 3 URLs",
+        help="only process first 3 URLs per CSV",
     )
     args = parser.parse_args()
 
     openai.api_key = args.openai_key
-    urls = []
-    with open(args.csv, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        next(reader, None)
-        for row in reader:
-            if len(row) > 1 and row[1].startswith("http"):
-                urls.append(row[1].strip())
-    if args.test:
-        urls = urls[:3]
 
-    crawler = PreciseContentCrawler(
-        rules_file=args.rules,
-        use_ocr=False,
-        use_openai=False,
-        openai_key=None,
-    )
-    os.makedirs(args.output_dir, exist_ok=True)
+    # Build jobs: for each CSV file, read URLs and prepare subdirectory
+    jobs = []
+    for csv_path in args.csv:
+        name = os.path.splitext(os.path.basename(csv_path))[0]
+        sub_out = os.path.join(args.output_dir, name)
+        os.makedirs(sub_out, exist_ok=True)
 
-    for idx, url in enumerate(urls, 1):
-        print(f"[{idx}/{len(urls)}] {url}")
-        _, content_image = crawler.capture_content_only(url)
-        if not content_image:
-            print(f"  failed to capture content image for {url}")
-            continue
+        urls = []
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if len(row) > 1 and row[1].startswith("http"):
+                    urls.append(row[1].strip())
+        if args.test:
+            urls = urls[:3]
 
-        base = os.path.join(args.output_dir, f"{idx:04d}_chapter")
-        image_path = base + ".png"
-        content_image.save(image_path)
-        print(f"  saved image: {image_path}")
+        for idx, url in enumerate(urls, 1):
+            jobs.append((sub_out, idx, url))
 
-        text = batch_ocr_for_image(
-            image_path,
-            args.ocr_model,
-            args.proofread_model,
-            args.chunk_height,
-            args.overlap,
-            args.min_overlap_chars,
-        )
-        out_path = base + "_gptocr_batch.txt"
-        with open(out_path, "w", encoding="utf-8") as fw:
-            fw.write(text)
-        print(f"  saved OCR result: {out_path}")
+    # Process jobs, optionally in parallel
+    if args.workers > 1:
+        print(f"Starting processing with {args.workers} workers...")
+        with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
+            futures = {
+                executor.submit(
+                    process_job, job, args.rules,
+                    args.ocr_model, args.proofread_model,
+                    args.chunk_height, args.overlap,
+                    args.min_overlap_chars, args.openai_key
+                ): job
+                for job in jobs
+            }
+            for future in concurrent.futures.as_completed(futures):
+                job = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Error processing {job}: {e}", file=sys.stderr)
+    else:
+        for job in jobs:
+            try:
+                process_job(
+                    job, args.rules, args.ocr_model,
+                    args.proofread_model, args.chunk_height,
+                    args.overlap, args.min_overlap_chars,
+                    args.openai_key
+                )
+            except Exception as e:
+                print(f"Error processing {job}: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
