@@ -51,11 +51,35 @@ def ocr_chunks_batch(image_paths: list[str], model: str) -> list[str]:
             "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"},
         })
 
+    # add a system-level instruction to enforce strict JSON-array-only output
+    system_msg = (
+        "你是一个严格的 OCR 助手，接收多张图片，务必将识别结果按顺序返回 JSON 数组，"
+        "禁止输出任何多余内容或注释。"
+    )
     resp = openai.chat.completions.create(
         model=model,
-        messages=[{"role": "user", "content": parts}],
+        messages=[
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": parts},
+        ],
     )
-    return json.loads(resp.choices[0].message.content)
+    raw = resp.choices[0].message.content
+    # 尝试严格解析 JSON 数组，若失败则提取首个 [...] 子串重试
+    try:
+        data = json.loads(raw.strip())
+    except json.JSONDecodeError:
+        import re
+
+        m = re.search(r"\[.*\]", raw, flags=re.S)
+        if not m:
+            raise ValueError(f"无法从 OCR 输出中解析 JSON 数组：{raw!r}")
+        data = json.loads(m.group(0))
+    # 验证返回长度与输入 chunk 数一致
+    if not isinstance(data, list) or len(data) != len(image_paths):
+        raise ValueError(
+            f"OCR 结果数与 chunk 数不符，预期 {len(image_paths)}，实际 {len(data)}：{data!r}"
+        )
+    return data
 
 
 def batch_ocr_for_image(
