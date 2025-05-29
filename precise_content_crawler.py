@@ -475,10 +475,7 @@ class PreciseContentCrawler:
         # 只保留標記前的內容
         text = re.split(markers_pattern, text)[0]
 
-        # 移除頭部非正文内容：只保留從「第X章」開始
-        m = re.search(r'(^第[0-9零一二三四五六七八九十百千万]+[章回].*)', text, flags=re.MULTILINE)
-        if m:
-            text = text[m.start(1):]
+        # NOTE: 章節標題不一定出現在每頁頂部，移除標題前文本的邏輯應在整章拼接後處理
 
         # 移除常見廣告語（僅針對單行，不跨多行）
         ad_patterns = [
