@@ -548,6 +548,7 @@ class PreciseContentCrawler:
                     if self.gptocr_proofread_model:
                         print(f"  [GPT-OCR] proofreading merged text with {self.gptocr_proofread_model}...")
                         merged = proofread_text(merged, self.gptocr_proofread_model)
+                    merged = self._clean_content(merged)
                     gptocr_file = os.path.join(output_dir, f"{i:04d}_chapter_gptocr.txt")
                     with open(gptocr_file, 'w', encoding='utf-8') as gf:
                         gf.write(merged)
