@@ -35,26 +35,39 @@ import openai
 from difflib import SequenceMatcher
 
 
-def split_image(image_path: str, max_height: int, overlap: int) -> list[str]:
-    """Split the input image into vertically overlapping chunks."""
+def split_image(
+    image_path: str,
+    max_height: int,
+    overlap: int,
+    bottom_skip: int = 0,
+) -> list[str]:
+    """
+    Split the input image into vertically overlapping chunks,
+    excluding the bottom_skip pixels from the end of the image.
+
+    bottom_skip: number of pixels to omit from the bottom before slicing chunks.
+    """
     img = Image.open(image_path)
     width, height = img.size
     base, _ = os.path.splitext(image_path)
     if overlap >= max_height:
         raise ValueError("overlap must be smaller than chunk_height")
+    if bottom_skip < 0 or bottom_skip >= height:
+        raise ValueError("bottom_skip must be between 0 and image height")
+    effective_height = height - bottom_skip
     step = max_height - overlap
 
     chunks: list[str] = []
     top = 0
     idx = 0
-    while top < height:
-        bottom = min(top + max_height, height)
+    while top < effective_height:
+        bottom = min(top + max_height, effective_height)
         tile = img.crop((0, top, width, bottom))
         chunk_path = f"{base}_chunk_{idx}.png"
         tile.save(chunk_path)
         chunks.append(chunk_path)
         idx += 1
-        if bottom >= height:
+        if bottom >= effective_height:
             break
         top += step
     return chunks

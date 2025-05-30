@@ -9,16 +9,18 @@ Usage:
         --workers 4 \
         --chunk-height 760 \
         --overlap 20 \
+        --bottom-skip 60 \
         --min-overlap-chars 20 \
         --ocr-model o4-mini \
         --proofread-model o4-mini \
         --output-dir precise_output_batch
 
-This script reads URLs from one or more CSV files (creating a subdirectory per CSV),
-captures the content region screenshot for each URL, splits each image into overlapping
-chunks, sends all chunks of the same image in a single GPT-OCR request, merges and
-optionally proofreads the OCR results, then saves both the raw chapter image and the
-final text. It can run jobs in parallel using multiple worker processes.
+    This script reads URLs from one or more CSV files (creating a subdirectory per CSV),
+    captures the content region screenshot for each URL, splits each image into overlapping
+    chunks (excluding bottom-skip pixels), sends all chunks of the same image in a single
+    GPT-OCR request, merges and optionally proofreads the OCR results, then saves both
+    the raw chapter image and the final text. It can run jobs in parallel using multiple
+    worker threads.
 """
 import argparse
 import os
@@ -93,8 +95,9 @@ def batch_ocr_for_image(
     chunk_height: int,
     overlap: int,
     min_overlap_chars: int,
+    bottom_skip: int,
 ) -> str:
-    chunks = split_image(image_path, chunk_height, overlap)
+    chunks = split_image(image_path, chunk_height, overlap, bottom_skip)
     print(f"  Sending {len(chunks)} chunks in a single OCR request")
     texts = ocr_chunks_batch(chunks, ocr_model)
     merged = merge_texts(texts, min_overlap_chars)
@@ -103,7 +106,8 @@ def batch_ocr_for_image(
     return clean_content(merged)
 
 def process_job(job, rules_file, ocr_model, proofread_model,
-                chunk_height, overlap, min_overlap_chars, openai_key):
+                chunk_height, overlap, min_overlap_chars,
+                bottom_skip, openai_key):
     sub_out, idx, url = job
     openai.api_key = openai_key
     crawler = PreciseContentCrawler(
@@ -123,7 +127,8 @@ def process_job(job, rules_file, ocr_model, proofread_model,
 
     text = batch_ocr_for_image(
         image_path, ocr_model, proofread_model,
-        chunk_height, overlap, min_overlap_chars
+        chunk_height, overlap, min_overlap_chars,
+        bottom_skip
     )
     out_path = base + "_gptocr_batch.txt"
     with open(out_path, "w", encoding="utf-8") as fw:
@@ -151,7 +156,12 @@ def main():
         "--chunk-height", type=int, default=760
     )
     parser.add_argument(
-        "--overlap", type=int, default=20
+        "--overlap", type=int, default=20,
+        help="overlap pixels between chunks"
+    )
+    parser.add_argument(
+        "--bottom-skip", type=int, default=60,
+        help="pixels to skip at bottom of image before chunking (default: 60)"
     )
     parser.add_argument(
         "--min-overlap-chars", type=int, default=20
@@ -210,7 +220,8 @@ def main():
                     process_job, job, args.rules,
                     args.ocr_model, args.proofread_model,
                     args.chunk_height, args.overlap,
-                    args.min_overlap_chars, args.openai_key
+                    args.min_overlap_chars, args.bottom_skip,
+                    args.openai_key
                 ): job
                 for job in jobs
             }
@@ -227,7 +238,7 @@ def main():
                     job, args.rules, args.ocr_model,
                     args.proofread_model, args.chunk_height,
                     args.overlap, args.min_overlap_chars,
-                    args.openai_key
+                    args.bottom_skip, args.openai_key
                 )
             except Exception as e:
                 print(f"Error processing {job}: {e}", file=sys.stderr)
