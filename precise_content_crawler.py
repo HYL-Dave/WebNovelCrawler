@@ -542,11 +542,15 @@ class PreciseContentCrawler:
             r'卡书屋[：:][^\n]*',
         ]
 
+        # 新增：過濾 “记得在邮件里找地址：dz@zashuwu.com” 等變體
+        ad_patterns.append(r'记(?:得|住)?[^\\n]{0,20}?(?:邮件|邮箱)[^\\n]*?@[^\\n]*')
+
         for pattern in ad_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
         text = text.replace('叶洄', '叶洵')
         text = text.replace('叶淘', '叶洵')
+        text = text.replace('叶洽', '叶洵')
 
         # 清理多餘空行
         text = re.sub(r'\n\s*\n+', '\n\n', text)
