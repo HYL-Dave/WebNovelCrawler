@@ -483,6 +483,11 @@ class PreciseContentCrawler:
             r'請記住[^\n]*?域名',
             r'手機[^\n]*?閱讀',
             r'最新網址',
+            r'最新地址：',
+            # 根据样本：最新地址：发邮件至 Dz@ZASHUWU.COM
+            r'最新地址：发邮件至[^\n]*',
+            # 根据样本：记得发邮件至地址：Dz@ZASHUWU.COM
+            r'记得发邮件至地址：[^\n]*',
             r'無彈窗',
             r'更新最快',
             r'本站[^\n]*?域名',
@@ -502,9 +507,12 @@ class PreciseContentCrawler:
             r'发邮件获取最新域名[:：][^\n]*',
             r'记住[：:][^\n]*?ZASHUWU\.COM',
             r'杂书屋[：:][^\n]*',
+            # 根据样本：记住【杂书屋】：ZASHUWU.COM
+            r'记住【杂书屋】：[^\n]*',
             r'注册会员可关闭广告[^\n]*',
             r'您当前阅读进度[^\n]*',
-            r'剩\s*\d+\s*章待阅[^\n]*',
+            # 剩余章节提示，如“剩余4212章待阅，点击下章继续阅读。”
+            r'剩余?\s*\d+\s*章待阅[^\n]*',
             r'阅读历史[^\n]*?搜书',
             # 新增 – 针对收藏阅读进度提示及下一章跳转提示
             r'【收藏[^\n]*?防止丢失阅读进度】',
@@ -514,6 +522,9 @@ class PreciseContentCrawler:
 
         for pattern in ad_patterns:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+
+        text = text.replace('叶洄', '叶洵')
+        text = text.replace('叶淘', '叶洵')
 
         # 清理多餘空行
         text = re.sub(r'\n\s*\n+', '\n\n', text)
