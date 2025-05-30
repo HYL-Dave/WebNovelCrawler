@@ -496,7 +496,7 @@ class PreciseContentCrawler:
             r'請記住[^\n]*?域名',
             r'手機[^\n]*?閱讀',
             r'最新網址',
-            r'最新地址：',
+            r'最新地址',
             r'继续阅读',
             # 根据样本：最新地址：发邮件至 Dz@ZASHUWU.COM
             r'最新地址：发邮件至[^\n]*',
@@ -551,6 +551,7 @@ class PreciseContentCrawler:
         text = text.replace('叶洄', '叶洵')
         text = text.replace('叶淘', '叶洵')
         text = text.replace('叶洽', '叶洵')
+        text = text.replace('叶渊', '叶洵')
 
         # 清理多餘空行
         text = re.sub(r'\n\s*\n+', '\n\n', text)
