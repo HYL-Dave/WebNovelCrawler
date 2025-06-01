@@ -552,6 +552,8 @@ class PreciseContentCrawler:
         text = text.replace('叶淘', '叶洵')
         text = text.replace('叶洽', '叶洵')
         text = text.replace('叶渊', '叶洵')
+        text = text.replace('叶汐', '叶洵')
+        text = text.replace('叶洺', '叶洵')
 
         # 清理多餘空行
         text = re.sub(r'\n\s*\n+', '\n\n', text)

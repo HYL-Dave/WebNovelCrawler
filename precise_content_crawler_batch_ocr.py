@@ -21,12 +21,18 @@ Usage:
     GPT-OCR request, merges and optionally proofreads the OCR results, then saves both
     the raw chapter image and the final text. It can run jobs in parallel using multiple
     worker threads.
+
+單圖補救模式:
+    python precise_content_crawler_batch_ocr.py --image precise_output_batch_o4_mini_v4/m8/0016_chapter.png \
+       --ocr-model o4-mini --proofread-model o4-mini --openai-key sk-...
+即可在同目錄生成 0016_chapter_gptocr_batch.txt，用於事後補 OCR 文本。
 """
 import argparse
 import os
 import csv
 import json
 import base64
+import re
 import openai
 from precise_content_crawler import (
     split_image,
@@ -70,13 +76,26 @@ def ocr_chunks_batch(image_paths: list[str], model: str) -> list[str]:
         ],
     )
     raw = resp.choices[0].message.content
-    # 尝试严格解析 JSON 数组，若失败则提取首个 [...] 子串重试
-    try:
-        data = json.loads(raw.strip())
-    except json.JSONDecodeError:
-        import re
 
-        m = re.search(r"\[.*\]", raw, flags=re.S)
+    # ---------------- Robust JSON extraction ----------------
+    # GPT 有时会在 JSON 数组前后包裹 ```json 代碼塊、額外提示或重複輸出，
+    # 導致 json.loads() 報 Extra data。這裡使用兩步策略：
+    # 1. 嘗試透過 JSONDecoder().raw_decode 解析首個合法 JSON 值。
+    # 2. 若失敗，再回退到正則提取首個 "[ ... ]" 子串（非貪婪，避免抓到後續雜訊）。
+
+    cleaned = raw.strip()
+
+    # 去除 ```json ... ``` 代碼塊包裹
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"```\s*$", "", cleaned)
+
+    decoder = json.JSONDecoder()
+    try:
+        data, _ = decoder.raw_decode(cleaned)
+    except json.JSONDecodeError:
+        # 非貪婪匹配首個 JSON array
+        m = re.search(r"\[.*?\]", cleaned, flags=re.S)
         if not m:
             raise ValueError(f"无法从 OCR 输出中解析 JSON 数组：{raw!r}")
         data = json.loads(m.group(0))
@@ -140,9 +159,14 @@ def main():
     parser = argparse.ArgumentParser(
         description="Batch GPT-OCR end-to-end: crawl images and OCR"
     )
-    parser.add_argument(
-        "--csv", nargs="+", required=True,
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--csv", nargs="+",
         help="CSV file(s) containing URLs list(s)"
+    )
+    group.add_argument(
+        "--image",
+        help="Process a single chapter image (PNG) that has already been captured"
     )
     parser.add_argument(
         "--rules", help="content selector rules JSON file"
@@ -191,9 +215,40 @@ def main():
 
     openai.api_key = args.openai_key
 
+    # ------------------------------------------------------------
+    # Mode 1: single image OCR
+    # ------------------------------------------------------------
+    if args.image:
+        img_path = args.image
+        if not os.path.isfile(img_path):
+            print(f"Image not found: {img_path}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Processing single image: {img_path}")
+
+        text = batch_ocr_for_image(
+            img_path,
+            args.ocr_model,
+            args.proofread_model,
+            args.chunk_height,
+            args.overlap,
+            args.min_overlap_chars,
+            args.bottom_skip,
+        )
+
+        # default output file: same base name + _gptocr_batch.txt
+        out_path = os.path.splitext(img_path)[0] + "_gptocr_batch.txt"
+        with open(out_path, "w", encoding="utf-8") as fw:
+            fw.write(text)
+        print(f"✓ OCR result saved to {out_path}")
+        return
+
+    # ------------------------------------------------------------
+    # Mode 2: batch crawl & OCR via CSV
+    # ------------------------------------------------------------
     # Build jobs: for each CSV file, read URLs and prepare subdirectory
     jobs = []
-    for csv_path in args.csv:
+    for csv_path in args.csv or []:
         name = os.path.splitext(os.path.basename(csv_path))[0]
         sub_out = os.path.join(args.output_dir, name)
         os.makedirs(sub_out, exist_ok=True)
